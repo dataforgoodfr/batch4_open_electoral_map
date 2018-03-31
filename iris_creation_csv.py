@@ -20,6 +20,4 @@ data_final["P14_POP"] = data_pop["P14_POP"].apply(int)
 data_final["P14_POP15P"] = data_pop["P14_POP15P"].apply(int)
 data_final["REG"] = data_pop["REG"]
 data_final["DEP"] = data_pop["DEP"]
-
-for index, row in data_final.iterrows():
-    output.writerow(row)
+data_final.to_csv("iris_POP15.csv")
