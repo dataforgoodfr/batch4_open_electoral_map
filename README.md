@@ -2,4 +2,4 @@
 
 _Nous votons, nous dessinons_
 
-[Pad du projet](https://hackmd.io/s/S1bGujQQG)
+[Toutes les infos](quatrecentquatre.org)
