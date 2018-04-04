@@ -2,4 +2,4 @@
 
 _Nous votons, nous dessinons_
 
-[Toutes les infos](quatrecentquatre.org)
+[Toutes les infos](http://quatrecentquatre.org/)
