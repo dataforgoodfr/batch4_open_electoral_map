@@ -22,3 +22,8 @@ _Nous votons, nous dessinons_
 - JupyterLab / [Jupyter Notebook](http://jupyter.org/) (to wrangle with data, run and present results)
 - [Binder](http://mybinder.org/) (to run and share the Notebook online)
 - GitHub (here!)
+
+
+### Criteria
+
+A web interface (e.g. a Jupyter notebook on Binder) displaying a map of France divided in X _circonscriptions_, with a slider to change their number. _Circonscriptions_ must be **equal in population** **compact** (no weird shapes) and **continuous** (not broken in different parts). As much as possible they must not go out of _commune_ and _départements_ limits.
