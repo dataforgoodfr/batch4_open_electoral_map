@@ -33,6 +33,8 @@ class CirconscriptionBuilder():
         self.population_2014 = pd.read_excel("data/population_iris/base-ic-evol-struct-pop-2014.xls", skiprows=4, header=1)
         self.population_2014["CODE_IRIS"] = self.population_2014["IRIS"]
 
+        self.iris[:, 'P14_POP'] = self.population_2014['P14_POP']
+
         self.pop_france = self.population_2014["P14_POP"].sum()
         self.pop_dep = self.population_2014.groupby("DEP")["P14_POP"].sum()
         self.nb_circo = 335 * self.pop_dep / self.pop_france
@@ -108,7 +110,6 @@ class CirconscriptionBuilder():
             iris_filtered["FranceMetropolitain"] = atom.copy()
 
         for key, value in iris_filtered.items():
-            value.loc[:, 'P14_POP'] = self.population_2014['P14_POP']
             value.loc[:, 'departement_iris'] = key
             value.loc[:, 'centroid_lng'] = value["geometry"].centroid.apply(lambda x: x.x)
             value.loc[:, 'centroid_lat'] = value["geometry"].centroid.apply(lambda x: x.y)
