@@ -31,6 +31,7 @@ class CirconscriptionBuilder():
         # Add population
         print("Get population counts per departement...")
         self.population_2014 = pd.read_excel("data/population_iris/base-ic-evol-struct-pop-2014.xls", skiprows=4, header=1)
+        self.population_2014["CODE_IRIS"] = self.population_2014["IRIS"]
 
         self.pop_france = self.population_2014["P14_POP"].sum()
         self.pop_dep = self.population_2014.groupby("DEP")["P14_POP"].sum()
@@ -40,23 +41,24 @@ class CirconscriptionBuilder():
     def calculate_circonscripitons_per_departement(self):
         # distribute circonscription by departement
         df_rep = pd.DataFrame()
-        df_rep['nb_circo'] = self.nb_circo.values
-        df_rep['population'] = self.pop_dep.values
-        df_rep['nb_circo_int'] = self.nb_circo_int.values
+        df_rep['nb_circo'] = self.nb_circo
+        df_rep['population'] = self.pop_dep
+        df_rep['nb_circo_int'] = self.nb_circo_int
         df_rep['nb_circo_int'] = df_rep['nb_circo_int'].replace(0, 1)
-        df_rep['dep'] = self.population_2014.groupby("DEP")["DEP"]
+        # df_rep['dep'] = self.population_2014.groupby("DEP")["DEP"]
+        # self.test = self.population_2014.groupby("DEP")["DEP"]
+
         rest = int(df_rep['nb_circo'].sum() - df_rep['nb_circo_int'].sum()) + 1
         df_rep['nb_circo_reste'] = df_rep['nb_circo'] - df_rep['nb_circo_int']
         df_rep = df_rep.sort_values('nb_circo_reste', ascending=False)
         df_rep['nb_circo_reste_arrondi'] = (df_rep['nb_circo_reste'] >= df_rep['nb_circo_reste'].nlargest(n=rest).min()).astype('int') 
-        df_rep['circo_total'] = df_rep['nb_circo_int'] + df_rep['nb_circo_reste_arrondi'] 
-        df_rep = df_rep.sort_values('dep')
+        df_rep['circo_total'] = df_rep['nb_circo_int'] + df_rep['nb_circo_reste_arrondi']
+        df_rep = df_rep.sort_index()
 
         # get rid of corsica, north and dom-tom
-        df_final = df_rep.drop(df_rep.index[[28, 29, 95, 96, 97, 98, 99]]).copy()
-        df_final['population'] = (df_final['population']/df_final['circo_total']).astype('int')
-        df_final.index = range(len(df_final.index))
-
+        df_final = df_rep.drop(["971", "972", "973", "974"]).copy()
+        df_final['population_circo'] = (df_final['population']/df_final['circo_total']).astype('int')
+        # df_final = df_rep
         self.df_final = df_final
 
     def prepare_atoms(self, by_departement=True, granualrity="iris"):
@@ -68,31 +70,48 @@ class CirconscriptionBuilder():
                 + granualrity: Use commune, canton, or iris
         """
 
-        iris_filtered = {}
+        # Build the atom units (commune, iris, cantons, etc)
+        if granualrity == "commune":
+            print("Dissolve the communes...")
+            commune_df = self.iris.copy()
 
+            commune_df = commune_df.dissolve("NOM_COM", aggfunc="sum")
+            commune_df.crs = self.iris.crs
+
+            # Calcul le centroid des nouveaux atoms
+            commune_df.loc[:, 'centroid_lng'] = commune_df["geometry"].centroid.apply(lambda x: x.x)
+            commune_df.loc[:, 'centroid_lat'] = commune_df["geometry"].centroid.apply(lambda x: x.y)
+
+            commune_df["NOM_COM"] = commune_df.index
+
+            atom = commune_df
+        else:
+            atom = self.iris.copy()
+
+        # Build the dictionnary of sets of atoms within which we build circonscriptions
+        # (departement or national level)
+        print("Group the atom sets...")
+        iris_filtered = {}
         if by_departement:
             for i in range(1, 95):
-                if i < 10:
-                    departement = "0"+str(i)
+                dep = str(i).zfill(2)
 
+                if i == 20:
+                    dep = "2A"
+                    iris_filtered[dep] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
+
+                    dep = "2B"
+                    iris_filtered[dep] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
                 else:
-                    departement = str(i)
-                if i != 20:
-                    iris_filtered[i] = self.iris[self.iris["CODE_IRIS"].str.startswith(departement)].copy()
-            else:
-                iris_filtered[0] = self.iris.copy()
-
-        self.population_2014["CODE_IRIS"] = self.population_2014["IRIS"]
-
-        dept = 1
+                    iris_filtered[dep] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
+        else:
+            iris_filtered["FranceMetropolitain"] = atom.copy()
 
         for key, value in iris_filtered.items():
-
-                value.loc[:,'P14_POP'] = self.population_2014['P14_POP']
-                value.loc[:, 'departement_iris'] = dept
-                dept = dept + 1
-                value.loc[:, 'centroid_lng'] = value["geometry"].centroid.apply(lambda x: x.x)
-                value.loc[:, 'centroid_lat'] = value["geometry"].centroid.apply(lambda x: x.y)
+            value.loc[:, 'P14_POP'] = self.population_2014['P14_POP']
+            value.loc[:, 'departement_iris'] = key
+            value.loc[:, 'centroid_lng'] = value["geometry"].centroid.apply(lambda x: x.x)
+            value.loc[:, 'centroid_lat'] = value["geometry"].centroid.apply(lambda x: x.y)
 
         self.iris_filtered = iris_filtered
 
@@ -111,12 +130,8 @@ class CirconscriptionBuilder():
 
             # get rid of corsica and north (problem with map generation)
             points = []
-            if key < 20:
-                nb = self.df_final['circo_total'][key-1]
-                pop = self.df_final['population'][key-1]
-            if key > 20:
-                nb = self.df_final['circo_total'][key-2]
-                pop = self.df_final['population'][key-2]
+            nb = self.df_final['circo_total'][key]
+            pop = self.df_final['population_circo'][key]
 
             for idx, row in value.iterrows():
                 points.append({"coords": np.array([float(row['centroid_lng']), float(row['centroid_lat'])]), \
@@ -149,7 +164,7 @@ class CirconscriptionBuilder():
                               popup="population :"+str(pop),
                               icon=folium.Icon(color='red', icon='info-sign')).add_to(mapa)
 
-            if key > 4:
+            if key == "04":
                 break
 
         fn = 'map_'+str(k)+'circo.html'
