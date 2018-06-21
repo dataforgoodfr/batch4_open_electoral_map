@@ -28,19 +28,19 @@ class CirconscriptionBuilder():
         # Change projection
         self.iris = self.iris.to_crs(epsg='4326')
 
-        # Add population
+        # Add population. 
         print("Get population counts per departement...")
         self.population_2014 = pd.read_excel("data/population_iris/base-ic-evol-struct-pop-2014.xls", skiprows=4, header=1)
-
         self.population_2014["CODE_IRIS"] = self.population_2014["IRIS"]
         self.iris = self.iris.merge(self.population_2014, how='inner', on=["CODE_IRIS"])
 
+    def calculate_circonscripitons_per_departement(self):
+        # Population per departement
         self.pop_france = self.population_2014["P14_POP"].sum()
         self.pop_dep = self.population_2014.groupby("DEP")["P14_POP"].sum()
         self.nb_circo = 335 * self.pop_dep / self.pop_france
         self.nb_circo_int = self.nb_circo.astype('int')
 
-    def calculate_circonscripitons_per_departement(self):
         # distribute circonscription by departement
         df_rep = pd.DataFrame()
         df_rep['nb_circo'] = self.nb_circo
@@ -58,6 +58,7 @@ class CirconscriptionBuilder():
         # get rid of dom-tom
         df_final = df_rep.drop(["971", "972", "973", "974"]).copy()
         df_final['population_circo'] = (df_final['population']/df_final['circo_total']).astype('int')
+
         # df_final = df_rep
         self.df_final = df_final
 
@@ -75,44 +76,64 @@ class CirconscriptionBuilder():
             print("Dissolve the communes...")
             commune_df = self.iris.copy()
 
-            commune_df = commune_df.dissolve("NOM_COM", aggfunc="sum")
+            commune_df["NOM_COM_FULL"] = commune_df["CODE_IRIS"].str[:2] + "_" + commune_df["NOM_COM"]
+
+            commune_df = commune_df.dissolve("NOM_COM_FULL", aggfunc="sum")
             commune_df.crs = self.iris.crs
 
             # Calcul le centroid des nouveaux atoms
             commune_df.loc[:, 'centroid_lng'] = commune_df["geometry"].centroid.apply(lambda x: x.x)
             commune_df.loc[:, 'centroid_lat'] = commune_df["geometry"].centroid.apply(lambda x: x.y)
 
-            commune_df["NOM_COM"] = commune_df.index
+            commune_df["NOM_COM_FULL"] = commune_df.index
+            commune_df["ATOM_ID"] = commune_df["NOM_COM_FULL"]
 
-            atom = commune_df
+            atom = commune_df.copy()
         else:
             atom = self.iris.copy()
+            atom["ATOM_ID"] = atom["CODE_IRIS"]
 
         # Build the dictionnary of sets of atoms within which we build circonscriptions
         # (departement or national level)
         print("Group the atom sets...")
-        iris_filtered = {}
-        if by_departement:
-            for i in range(1, 95):
-                dep = str(i).zfill(2)
+        iris_filtered_dep = {}
+        iris_filtered_metro = {"metro": pd.DataFrame(), "corse": pd.DataFrame()}
 
-                if i == 20:
-                    dep = "2A"
-                    iris_filtered[dep] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
+        for i in range(1, 95):
+            dep = str(i).zfill(2)
 
-                    dep = "2B"
-                    iris_filtered[dep] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
-                else:
-                    iris_filtered[dep] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
-        else:
-            iris_filtered["FranceMetropolitain"] = atom.copy()
+            if i == 20:
+                dep = "2A"
+                dep_atom = atom[atom["ATOM_ID"].str.startswith(dep)].copy()
+                iris_filtered_dep[dep] = dep_atom.copy()
+                iris_filtered_metro["corse"].append(dep_atom.copy())
 
-        for key, value in iris_filtered.items():
+                dep = "2B"
+                dep_atom = atom[atom["ATOM_ID"].str.startswith(dep)].copy()
+                iris_filtered_dep[dep] = dep_atom.copy()
+                iris_filtered_metro["corse"].append(dep_atom.copy())
+            else:
+                dep_atom = atom[atom["ATOM_ID"].str.startswith(dep)].copy()
+                iris_filtered_dep[dep] = dep_atom.copy()
+                iris_filtered_metro["metro"].append(dep_atom.copy())
+
+            # if not by_departement:
+            #     iris_filtered_metro ["FranceMetropolitain"].
+            # else:
+            #     iris_filtered["FranceMetropolitain"] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
+
+        for key, value in iris_filtered_dep.items():
             value.loc[:, 'departement_iris'] = key
             value.loc[:, 'centroid_lng'] = value["geometry"].centroid.apply(lambda x: x.x)
             value.loc[:, 'centroid_lat'] = value["geometry"].centroid.apply(lambda x: x.y)
 
-        self.iris_filtered = iris_filtered
+        # self.iris_filtered = iris_filtered_dep
+        # self.iris_filtered_metro = iris_filtered_metro
+
+        if by_departement:
+            self.iris_filtered = iris_filtered_dep
+        else:
+            self.iris_filtered = iris_filtered_metro
 
     def generate_maps(self, outname):
         mapa = folium.Map([46.575859, 0.290518],
@@ -122,43 +143,53 @@ class CirconscriptionBuilder():
         map_filtered = {}
 
         # for k in range(300,600,25):
-        for key, value in self.iris_filtered.items():
+        for key, atom_df in self.iris_filtered.items():
             print(key)
 
             # get rid of corsica and north (problem with map generation)
             points = []
-            nb = self.df_final['circo_total'][key]
-            pop = self.df_final['population_circo'][key]
+            if key == "FranceMetropolitain":
+                nb = self.df_final['circo_total'].sum()
+                # pop = self.df_final['population_circo'].sum()
+            else:
+                nb = self.df_final['circo_total'][key]
+                # pop = self.df_final['population_circo'][key]
 
-            for idx, row in value.iterrows():
+            # Build points
+            for idx, row in atom_df.iterrows():
                 points.append({"coords": np.array([float(row['centroid_lng']), float(row['centroid_lat'])]), \
-                              "w": int(row["P14_POP"]), "zip": row['CODE_IRIS'], "state": row["departement_iris"]})
-            centers = data_weighted_kmeans.randomize_initial_cluster(points, nb)
+                              "w": int(row["P14_POP"]), "ATOM_ID": row['ATOM_ID']})
 
-            print("weights")
+            # Calculate clusters
+            centers = data_weighted_kmeans.randomize_initial_cluster(points, nb)
             points, centers, it_num = data_weighted_kmeans.kmeans_evolution_weighted(points, centers, nb, it_max=1000, weight_step_scale=10)
             points_df = pd.DataFrame.from_dict(points)
-            points_df["CODE_IRIS"] = points_df["zip"]
-            points_df["coords"] = "aaa"
-            result = value.merge(points_df, how='inner', on=['CODE_IRIS', 'CODE_IRIS'])
-            print("Dissolve")
+            # points_df["ATOM_ID"] = points_df["atom_id"]
+
+            result = atom_df.merge(points_df, how='inner', on=['ATOM_ID', 'ATOM_ID'])
+
+            # Merge atoms by circonscription
+            print("Dissolve...")
             simplified_map = result.dissolve(by='c')
             simplified_map.crs = result.crs
-            print("Done")
+
+            # Draw
+            print("Draw...")
             simplified_map["colour"] = ["#%06x" % random.randint(0, 0xFFFFFF) for i in range(0,nb)]
-            points = folium.features.GeoJson(simplified_map,  style_function=lambda feature: {
+            points = folium.features.GeoJson(simplified_map[["geometry", "colour"]],  style_function=lambda feature: {
                                              'fillColor': feature['properties']['colour'],
                                              'color': "#000000",
                                              'weight': 1,
                                              'fillOpacity': 0.5,
                                              })
+
             map_filtered["map{0}".format(key)] = points
             mapa.add_children(points)
 
             for i in range(0, len(centers)):
                 center = centers[i]
                 folium.Marker([center["coords"][1], center["coords"][0]],
-                              popup="population :"+str(pop),
+                              popup="population :"+str(center["pop"]),
                               icon=folium.Icon(color='red', icon='info-sign')).add_to(mapa)
 
             if key == "04":
