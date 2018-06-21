@@ -97,38 +97,38 @@ class CirconscriptionBuilder():
         # (departement or national level)
         print("Group the atom sets...")
         iris_filtered_dep = {}
-        iris_filtered_metro = {"metro": pd.DataFrame(), "corse": pd.DataFrame()}
+        # iris_filtered_metro = {"metro": pd.DataFrame(), "corse": pd.DataFrame()}
+        iris_filtered_metro = {"corse": pd.DataFrame(), "metro": pd.DataFrame()}
 
         for i in range(1, 95):
             dep = str(i).zfill(2)
 
             if i == 20:
+
                 dep = "2A"
                 dep_atom = atom[atom["ATOM_ID"].str.startswith(dep)].copy()
                 iris_filtered_dep[dep] = dep_atom.copy()
-                iris_filtered_metro["corse"].append(dep_atom.copy())
+                corse = iris_filtered_metro["corse"]
+                iris_filtered_metro["corse"] = corse.append(dep_atom.copy())
 
                 dep = "2B"
                 dep_atom = atom[atom["ATOM_ID"].str.startswith(dep)].copy()
                 iris_filtered_dep[dep] = dep_atom.copy()
-                iris_filtered_metro["corse"].append(dep_atom.copy())
+                corse = iris_filtered_metro["corse"]
+                iris_filtered_metro["corse"] = corse.append(dep_atom.copy())
             else:
                 dep_atom = atom[atom["ATOM_ID"].str.startswith(dep)].copy()
                 iris_filtered_dep[dep] = dep_atom.copy()
-                iris_filtered_metro["metro"].append(dep_atom.copy())
-
-            # if not by_departement:
-            #     iris_filtered_metro ["FranceMetropolitain"].
-            # else:
-            #     iris_filtered["FranceMetropolitain"] = atom[atom["CODE_IRIS"].str.startswith(dep)].copy()
+                metro = iris_filtered_metro["metro"]
+                iris_filtered_metro["metro"] = metro.append(dep_atom.copy())
 
         for key, value in iris_filtered_dep.items():
-            value.loc[:, 'departement_iris'] = key
             value.loc[:, 'centroid_lng'] = value["geometry"].centroid.apply(lambda x: x.x)
             value.loc[:, 'centroid_lat'] = value["geometry"].centroid.apply(lambda x: x.y)
 
-        # self.iris_filtered = iris_filtered_dep
-        # self.iris_filtered_metro = iris_filtered_metro
+        for key, value in iris_filtered_metro.items():
+            value.loc[:, 'centroid_lng'] = value["geometry"].centroid.apply(lambda x: x.x)
+            value.loc[:, 'centroid_lat'] = value["geometry"].centroid.apply(lambda x: x.y)
 
         if by_departement:
             self.iris_filtered = iris_filtered_dep
@@ -148,8 +148,11 @@ class CirconscriptionBuilder():
 
             # get rid of corsica and north (problem with map generation)
             points = []
-            if key == "FranceMetropolitain":
-                nb = self.df_final['circo_total'].sum()
+            if key == "metro":
+                nb = self.df_final['circo_total'].sum() - (self.df_final.loc["2A","circo_total"] + self.df_final.loc["2B","circo_total"])
+                # pop = self.df_final['population_circo'].sum()
+            elif key == "corse":
+                nb = self.df_final.loc["2A","circo_total"] + self.df_final.loc["2B","circo_total"]
                 # pop = self.df_final['population_circo'].sum()
             else:
                 nb = self.df_final['circo_total'][key]
@@ -169,12 +172,10 @@ class CirconscriptionBuilder():
             result = atom_df.merge(points_df, how='inner', on=['ATOM_ID', 'ATOM_ID'])
 
             # Merge atoms by circonscription
-            print("Dissolve...")
             simplified_map = result.dissolve(by='c')
             simplified_map.crs = result.crs
 
             # Draw
-            print("Draw...")
             simplified_map["colour"] = ["#%06x" % random.randint(0, 0xFFFFFF) for i in range(0,nb)]
             points = folium.features.GeoJson(simplified_map[["geometry", "colour"]],  style_function=lambda feature: {
                                              'fillColor': feature['properties']['colour'],
@@ -191,9 +192,6 @@ class CirconscriptionBuilder():
                 folium.Marker([center["coords"][1], center["coords"][0]],
                               popup="population :"+str(center["pop"]),
                               icon=folium.Icon(color='red', icon='info-sign')).add_to(mapa)
-
-            if key == "04":
-                break
 
         fn = outname + ".html"
         mapa.save(fn)
