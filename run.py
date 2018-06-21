@@ -31,9 +31,9 @@ class CirconscriptionBuilder():
         # Add population
         print("Get population counts per departement...")
         self.population_2014 = pd.read_excel("data/population_iris/base-ic-evol-struct-pop-2014.xls", skiprows=4, header=1)
-        self.population_2014["CODE_IRIS"] = self.population_2014["IRIS"]
 
-        self.iris[:, 'P14_POP'] = self.population_2014['P14_POP']
+        self.population_2014["CODE_IRIS"] = self.population_2014["IRIS"]
+        self.iris = self.iris.merge(self.population_2014, how='inner', on=["CODE_IRIS"])
 
         self.pop_france = self.population_2014["P14_POP"].sum()
         self.pop_dep = self.population_2014.groupby("DEP")["P14_POP"].sum()
@@ -47,8 +47,6 @@ class CirconscriptionBuilder():
         df_rep['population'] = self.pop_dep
         df_rep['nb_circo_int'] = self.nb_circo_int
         df_rep['nb_circo_int'] = df_rep['nb_circo_int'].replace(0, 1)
-        # df_rep['dep'] = self.population_2014.groupby("DEP")["DEP"]
-        # self.test = self.population_2014.groupby("DEP")["DEP"]
 
         rest = int(df_rep['nb_circo'].sum() - df_rep['nb_circo_int'].sum()) + 1
         df_rep['nb_circo_reste'] = df_rep['nb_circo'] - df_rep['nb_circo_int']
@@ -57,7 +55,7 @@ class CirconscriptionBuilder():
         df_rep['circo_total'] = df_rep['nb_circo_int'] + df_rep['nb_circo_reste_arrondi']
         df_rep = df_rep.sort_index()
 
-        # get rid of corsica, north and dom-tom
+        # get rid of dom-tom
         df_final = df_rep.drop(["971", "972", "973", "974"]).copy()
         df_final['population_circo'] = (df_final['population']/df_final['circo_total']).astype('int')
         # df_final = df_rep
@@ -116,14 +114,12 @@ class CirconscriptionBuilder():
 
         self.iris_filtered = iris_filtered
 
-    def generate_maps(self):
+    def generate_maps(self, outname):
         mapa = folium.Map([46.575859, 0.290518],
                           zoom_start=9,
                           tiles='cartodbpositron')
 
         map_filtered = {}
-        k = 320
-        count = 1
 
         # for k in range(300,600,25):
         for key, value in self.iris_filtered.items():
@@ -168,5 +164,5 @@ class CirconscriptionBuilder():
             if key == "04":
                 break
 
-        fn = 'map_'+str(k)+'circo.html'
+        fn = outname + ".html"
         mapa.save(fn)
