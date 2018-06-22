@@ -100,7 +100,7 @@ class CirconscriptionBuilder():
         # iris_filtered_metro = {"metro": pd.DataFrame(), "corse": pd.DataFrame()}
         iris_filtered_metro = {"corse": pd.DataFrame(), "metro": pd.DataFrame()}
 
-        for i in range(1, 95):
+        for i in range(1, 96):
             dep = str(i).zfill(2)
 
             if i == 20:
