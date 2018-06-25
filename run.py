@@ -141,6 +141,7 @@ class CirconscriptionBuilder():
                           tiles='cartodbpositron')
 
         map_filtered = {}
+        output_map = gpd.GeoDataFrame()
 
         # for k in range(300,600,25):
         for key, atom_df in self.iris_filtered.items():
@@ -194,11 +195,14 @@ class CirconscriptionBuilder():
                               icon=folium.Icon(color='red', icon='info-sign')).add_to(mapa)
 
             out_filename = outname + key + ".geojson"
-            # simplified_map[["geometry", "colour"]].to_file(out_filename)
 
             with open(out_filename, 'w') as f:
                 f.write(simplified_map[["geometry", "colour"]].to_json())
-
+            output_map = output_map.append(simplified_map[["geometry", "colour"]].copy())
 
         fn = outname + ".html"
         mapa.save(fn)
+
+        out_filename = outname + "-complete.geojson"
+        with open(out_filename, 'w') as f:
+            f.write(output_map.to_json())
