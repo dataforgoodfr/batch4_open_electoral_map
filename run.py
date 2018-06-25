@@ -89,6 +89,34 @@ class CirconscriptionBuilder():
             commune_df["ATOM_ID"] = commune_df["NOM_COM_FULL"]
 
             atom = commune_df.copy()
+        elif granualrity == "commune_cutoff":
+            # TODO: Code not tested
+            print("Dissolve the communes with a cutoff...")
+            communes_cutoff = 3500
+            commune_df["NOM_COM_FULL"] = commune_df["CODE_IRIS"].str[:2] + "_" + commune_df["NOM_COM"]
+            commune_df = self.iris.copy()
+
+
+            commune_dissolved_df = commune_df.dissolve("NOM_COM_FULL", aggfunc="sum")
+            commune_dissolved_df.crs = self.iris.crs
+
+            small_coms = commune_dissolved_df[commune_dissolved_df["P14_POP"] <= communes_cutoff]
+            small_coms_names = list(small_coms.index.values)
+
+            large_coms_iris = commune_df[commune_df['NOM_COM_FULL'].isin(small_coms_names) == False]
+            small_coms_iris = commune_df[commune_df['NOM_COM_FULL'].isin(small_coms_names) == True]
+
+            all_df = small_coms.append(large_coms_iris)
+            print("Iris count reducded by : {d}".format(d=(commune_df.shape[0] - all_df.shape[0])))
+
+            # Calcul le centroid des nouveaux atoms
+            all_df.loc[:, 'centroid_lng'] = all_df["geometry"].centroid.apply(lambda x: x.x)
+            all_df.loc[:, 'centroid_lat'] = all_df["geometry"].centroid.apply(lambda x: x.y)
+
+            all_df["NOM_COM_FULL"] = all_df.index
+            all_df["ATOM_ID"] = all_df["NOM_COM_FULL"]
+            atom = all_df.copy()
+            self.test = atom
         else:
             atom = self.iris.copy()
             atom["ATOM_ID"] = atom["CODE_IRIS"]
@@ -166,7 +194,7 @@ class CirconscriptionBuilder():
 
             # Calculate clusters
             centers = data_weighted_kmeans.randomize_initial_cluster(points, nb)
-            points, centers, it_num = data_weighted_kmeans.kmeans_evolution_weighted(points, centers, nb, it_max=1000, weight_step_scale=10)
+            points, centers, it_num = data_weighted_kmeans.kmeans_evolution_weighted(points, centers, nb, it_max=1000, weight_step_scale=10, DEBUG=False)
             points_df = pd.DataFrame.from_dict(points)
             # points_df["ATOM_ID"] = points_df["atom_id"]
 
@@ -175,6 +203,11 @@ class CirconscriptionBuilder():
             # Merge atoms by circonscription
             simplified_map = result.dissolve(by='c')
             simplified_map.crs = result.crs
+
+            # Add the key s
+            simplified_map_index = simplified_map.index.to_series().apply(str)
+            simplified_map_index = key + "-" + simplified_map_index
+            simplified_map = simplified_map.set_index(simplified_map_index.values)
 
             # Draw
             simplified_map["colour"] = ["#%06x" % random.randint(0, 0xFFFFFF) for i in range(0,nb)]
@@ -194,15 +227,15 @@ class CirconscriptionBuilder():
                               popup="population :"+str(center["pop"]),
                               icon=folium.Icon(color='red', icon='info-sign')).add_to(mapa)
 
-            out_filename = outname + key + ".geojson"
+            out_filename = "out/" + outname + key + ".geojson"
 
             with open(out_filename, 'w') as f:
-                f.write(simplified_map[["geometry", "colour"]].to_json())
-            output_map = output_map.append(simplified_map[["geometry", "colour"]].copy())
+                f.write(simplified_map[["geometry", "colour", "pop", "centroid_lng", "centroid_lat"]].to_json())
+            output_map = output_map.append(simplified_map[["geometry", "colour", "pop", "centroid_lng", "centroid_lat"]].copy())
 
         fn = outname + ".html"
         mapa.save(fn)
 
-        out_filename = outname + "-complete.geojson"
+        out_filename = "out/" + outname + "-complete.geojson"
         with open(out_filename, 'w') as f:
             f.write(output_map.to_json())
