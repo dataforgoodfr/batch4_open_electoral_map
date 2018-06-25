@@ -193,5 +193,12 @@ class CirconscriptionBuilder():
                               popup="population :"+str(center["pop"]),
                               icon=folium.Icon(color='red', icon='info-sign')).add_to(mapa)
 
+            out_filename = outname + key + ".geojson"
+            # simplified_map[["geometry", "colour"]].to_file(out_filename)
+
+            with open(out_filename, 'w') as f:
+                f.write(simplified_map[["geometry", "colour"]].to_json())
+
+
         fn = outname + ".html"
         mapa.save(fn)
