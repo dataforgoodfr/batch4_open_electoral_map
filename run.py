@@ -163,7 +163,7 @@ class CirconscriptionBuilder():
         else:
             self.iris_filtered = iris_filtered_metro
 
-    def generate_maps(self, outname):
+    def generate_maps(self, outname, it_max=100, use_lowest_ratio=True, DEBUG=False):
         mapa = folium.Map([46.575859, 0.290518],
                           zoom_start=9,
                           tiles='cartodbpositron')
@@ -193,11 +193,13 @@ class CirconscriptionBuilder():
                               "w": int(row["P14_POP"]), "ATOM_ID": row['ATOM_ID']})
 
             # Calculate clusters
+            print("Calculate clusters")
             centers = data_weighted_kmeans.randomize_initial_cluster(points, nb)
-            points, centers, it_num = data_weighted_kmeans.kmeans_evolution_weighted(points, centers, nb, it_max=1000, weight_step_scale=10, DEBUG=False)
+            points, centers, it_num = data_weighted_kmeans.kmeans_evolution_weighted(points, centers, nb, it_max=it_max, weight_step_scale=10, use_lowest_ratio=use_lowest_ratio, DEBUG=DEBUG)
             points_df = pd.DataFrame.from_dict(points)
             # points_df["ATOM_ID"] = points_df["atom_id"]
 
+            print("Merge circonscriptions")
             result = atom_df.merge(points_df, how='inner', on=['ATOM_ID', 'ATOM_ID'])
 
             # Merge atoms by circonscription
@@ -210,6 +212,7 @@ class CirconscriptionBuilder():
             simplified_map = simplified_map.set_index(simplified_map_index.values)
 
             # Draw
+            print("Draw and save")
             simplified_map["colour"] = ["#%06x" % random.randint(0, 0xFFFFFF) for i in range(0,nb)]
             points = folium.features.GeoJson(simplified_map[["geometry", "colour"]],  style_function=lambda feature: {
                                              'fillColor': feature['properties']['colour'],

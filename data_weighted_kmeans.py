@@ -47,7 +47,7 @@ def distance_try(lat1, long1, lat2, long2, weight):
     return haversine((lat1, long1), (lat2, long2)) / (weight)
 
 
-def kmeans_evolution_weighted(points, centers, k, distance_method=distance_try, it_max=500, weight_step_scale=10, stop_criteria=1.05, DEBUG=False):
+def kmeans_evolution_weighted(points, centers, k, distance_method=distance_try, it_max=500, weight_step_scale=10, stop_criteria=1.05, use_lowest_ratio=True, DEBUG=False):
     """
     K-means clustering leading to similar-sized cluster.
     The point-cluster distances are weighted based on a
@@ -126,100 +126,114 @@ def kmeans_evolution_weighted(points, centers, k, distance_method=distance_try, 
 
     it_num = 0
 
+    best_ratio_output = {"ratio": 10000, "output": [points, centers, it_num]}
+
     distsq = np.zeros(k)
-    while (it_num < it_max):
 
-        it_num += 1
+    try:
+        while (it_num < it_max):
+            it_num += 1
 
-        changes = 0
-        for i, p in enumerate(points):
-            ci = p['c']
+            changes = 0
+            for i, p in enumerate(points):
+                ci = p['c']
 
-            # Make sure not to have empty centers
-            if centers[ci]['n'] <= 1:
-                continue
+                # Make sure not to have empty centers
+                if centers[ci]['n'] <= 1:
+                    continue
 
-            # For each cluster
-            for cj, c in enumerate(centers):
-                lat1 = p["coords"][1]
-                long1 = p["coords"][0]
-                lat2 = c["coords"][1]
-                long2 = c["coords"][0]
+                # For each cluster
+                for cj, c in enumerate(centers):
+                    lat1 = p["coords"][1]
+                    long1 = p["coords"][0]
+                    lat2 = c["coords"][1]
+                    long2 = c["coords"][0]
 
-                w = c["w"]
+                    w = c["w"]
 
-                if centers[cj]['n'] == 0:
-                    # Make sure not to have empty centers
-                    centers[cj]["coords"] = np.copy(p["coords"])
-                    distsq[cj] = 0
-                else:
-                    distsq[cj] = distance_method(lat1, long1, lat2, long2, w)
+                    if centers[cj]['n'] == 0:
+                        # Make sure not to have empty centers
+                        centers[cj]["coords"] = np.copy(p["coords"])
+                        distsq[cj] = 0
+                    else:
+                        distsq[cj] = distance_method(lat1, long1, lat2, long2, w)
 
-            # Find the index of the minimum value of DISTSQ.
-            nearest_cluster = np.argmin(distsq)
+                # Find the index of the minimum value of DISTSQ.
+                nearest_cluster = np.argmin(distsq)
 
-            # If that is not the cluster to which point I now belongs, move it there.
-            if nearest_cluster == ci:
-                continue
+                # If that is not the cluster to which point I now belongs, move it there.
+                if nearest_cluster == ci:
+                    continue
 
-            cj = nearest_cluster
-            centers[ci]['n'] -= 1
-            centers[cj]['n'] += 1
+                cj = nearest_cluster
+                centers[ci]['n'] -= 1
+                centers[cj]['n'] += 1
 
-            # assign the point its new home
-            p['c'] = cj
+                # assign the point its new home
+                p['c'] = cj
 
-            # indicate that a cluster was modified on this iteration
-            changes += 1
-
-        # Recompute cluster centers after each iteration
-        # TODO: this part could probably be more efficient by directly calculating 
-        #       changes in the update cluster code above
-        for j, c in enumerate(centers):
-            c["coords"] = np.zeros(d)
-            c['n'] = 0
-            c['pop'] = 0
-
-        for p in points:
-            centers[p['c']]["coords"] += p["coords"]
-            centers[p['c']]["n"] += 1
-            centers[p['c']]["pop"] += p['w']
-
-        pops = []
-
-        for j, c in enumerate(centers):
-            c["coords"] /= c["n"]
-            # c["w"] = c["pop"] / goal_population
-
-            weight_delta = (goal_population - c["pop"]) / goal_population
-            c["w"] *= 1 + (weight_delta / weight_step_scale)
-
-            if weight_delta != 1:
+                # indicate that a cluster was modified on this iteration
                 changes += 1
-            # print("id:"+str(j), c["pop"], round(weight_delta,4), round(c["w"], 4))
 
-            pops.append(c["pop"])
+            # Recompute cluster centers after each iteration
+            # TODO: this part could probably be more efficient by directly calculating 
+            #       changes in the update cluster code above
+            for j, c in enumerate(centers):
+                c["coords"] = np.zeros(d)
+                c['n'] = 0
+                c['pop'] = 0
 
-        max_pop = max(pops)
-        min_pop = min(pops)
+            for p in points:
+                centers[p['c']]["coords"] += p["coords"]
+                centers[p['c']]["n"] += 1
+                centers[p['c']]["pop"] += p['w']
 
-        if DEBUG:
-            if it_num % 1 == 0:
-                print("POPS: ", pops)
-                print("RATIO : ", min_pop, max_pop, round(max_pop/min_pop, 4))
-                show_kmeans(points, centers, output_name="iter-{iter}.png".format(iter=str(it_num).zfill(3)))
+            pops = []
 
-        if min_pop != 0:
-            # print(max_pop, min_pop)
-            # print(round(max_pop/min_pop, 4))
+            for j, c in enumerate(centers):
+                c["coords"] /= c["n"]
+                # c["w"] = c["pop"] / goal_population
 
-            # Exit if the ration is under the stopping criteria
-            if max_pop/min_pop <= stop_criteria:
+                weight_delta = (goal_population - c["pop"]) / goal_population
+                c["w"] *= 1 + (weight_delta / weight_step_scale)
+
+                if weight_delta != 1:
+                    changes += 1
+                # print("id:"+str(j), c["pop"], round(weight_delta,4), round(c["w"], 4))
+
+                pops.append(c["pop"])
+
+            max_pop = max(pops)
+            min_pop = min(pops)
+            ratio = max_pop/min_pop
+
+            if DEBUG:
+                if it_num % 1 == 0:
+                    # print("POPS: ", pops)
+                    print("RATIO : ", "  min:", min_pop, "  max:", max_pop, "  ratio:", round(max_pop/min_pop, 4), "  iteration ", it_num)
+                    print("Best ratio so far : ", round(best_ratio_output["ratio"], 4))
+                    # show_kmeans(points, centers, output_name="iter-{iter}.png".format(iter=str(it_num).zfill(3)))
+
+            if min_pop != 0:
+                # print(max_pop, min_pop)
+                # print(round(max_pop/min_pop, 4))
+
+                # Exit if the ration is under the stopping criteria
+                if max_pop/min_pop <= stop_criteria:
+                    break
+
+            if (ratio < best_ratio_output["ratio"]):
+                best_ratio_output = {"ratio": ratio, "output": [points, centers, it_num]}
+
+            # Exit if no reassignments were made during this iteration.
+            if changes == 0:
                 break
+    except KeyboardInterrupt:
+        print("Interrupted, returning the best one so far.")
 
-        # Exit if no reassignments were made during this iteration.
-        if changes == 0:
-            break
+    if use_lowest_ratio:
+        points = best_ratio_output["output"][0]
+        centers = best_ratio_output["output"][1]
 
     # Set the population on the points for easier access 
     for p in points:
